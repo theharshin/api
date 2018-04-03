@@ -8,50 +8,6 @@ use Directus\Util\ArrayUtils;
 abstract class AbstractSchema implements SchemaInterface
 {
     /**
-     * Cast records values by its column data type
-     *
-     * @param array    $records
-     * @param Field[] $fields
-     *
-     * @return array
-     */
-    public function castRecordValues(array $records, $fields)
-    {
-        // hotfix: records sometimes are no set as an array of rows.
-        $singleRecord = false;
-        if (!ArrayUtils::isNumericKeys($records)) {
-            $records = [$records];
-            $singleRecord = true;
-        }
-
-        foreach ($fields as $field) {
-            foreach ($records as $index => $record) {
-                $fieldName = $field->getName();
-                if (ArrayUtils::has($record, $fieldName)) {
-                    $records[$index][$fieldName] = $this->castValue($record[$fieldName], $field->getType());
-                }
-            }
-        }
-
-        return $singleRecord ? reset($records) : $records;
-    }
-
-    /**
-     * Parse records value by its column data type
-     *
-     * @see AbastractSchema::castRecordValues
-     *
-     * @param array $records
-     * @param $columns
-     *
-     * @return array
-     */
-    public function parseRecordValuesByType(array $records, $columns)
-    {
-        return $this->castRecordValues($records, $columns);
-    }
-
-    /**
      * @inheritdoc
      */
     public function getDefaultInterfaces()

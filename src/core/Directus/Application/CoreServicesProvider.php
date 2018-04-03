@@ -25,6 +25,7 @@ use Directus\Database\Exception\ConnectionFailedException;
 use Directus\Database\Schema\Object\Field;
 use Directus\Database\Schema\SchemaFactory;
 use Directus\Database\Schema\SchemaManager;
+use Directus\Database\Schema\Sources\SQLiteSchema;
 use Directus\Database\TableGateway\BaseTableGateway;
 use Directus\Database\TableGateway\DirectusPermissionsTableGateway;
 use Directus\Database\TableGateway\DirectusSettingsTableGateway;
@@ -910,20 +911,21 @@ class CoreServicesProvider
     {
         return function (Container $container) {
             $adapter = $container->get('database');
-            $databaseName = $adapter->getPlatform()->getName();
+            $platformName = $adapter->getPlatform()->getName();
 
-            switch ($databaseName) {
-                case 'MySQL':
+            switch (strtolower($platformName)) {
+                case 'mysql':
                     return new \Directus\Database\Schema\Sources\MySQLSchema($adapter);
                 // case 'SQLServer':
                 //    return new SQLServerSchema($adapter);
-                // case 'SQLite':
+                case 'sqlite':
                 //     return new \Directus\Database\Schemas\Sources\SQLiteSchema($adapter);
+                    return new SQLiteSchema($adapter);
                 // case 'PostgreSQL':
                 //     return new PostgresSchema($adapter);
             }
 
-            throw new \Exception('Unknown/Unsupported database: ' . $databaseName);
+            throw new \Exception('Unknown/Unsupported database: ' . $platformName);
         };
     }
 

@@ -70,7 +70,6 @@ class MySQLSchema extends AbstractSchema
                 'single' => new Expression('IFNULL(`DT`.`single`, 0)'),
                 'item_name_template',
                 'preview_url',
-                'status_mapping',
                 'managed' => new Expression('IF(ISNULL(`DT`.`collection`), 0, 1)')
             ],
             $select::JOIN_LEFT
@@ -96,7 +95,7 @@ class MySQLSchema extends AbstractSchema
         $statement = $sql->prepareStatementForSqlObject($select);
         $result = $statement->execute();
 
-        return $result;
+        return iterator_to_array($result);
     }
 
     /**
@@ -128,7 +127,9 @@ class MySQLSchema extends AbstractSchema
      */
     public function getCollection($collectionName)
     {
-        return $this->getCollections(['name' => $collectionName]);
+        $collection = $this->getCollections(['name' => $collectionName]);
+
+        return array_shift($collection);
     }
 
     /**
@@ -227,7 +228,7 @@ class MySQLSchema extends AbstractSchema
         $statement = $sql->prepareStatementForSqlObject($selectOne);
         $result = $statement->execute();
 
-        return $result;
+        return iterator_to_array($result);
     }
 
     /**
@@ -282,7 +283,7 @@ class MySQLSchema extends AbstractSchema
         $statement = $sql->prepareStatementForSqlObject($selectOne);
         $result = $statement->execute();
 
-        return $result;
+        return iterator_to_array($result);
     }
 
     /**
@@ -404,75 +405,6 @@ class MySQLSchema extends AbstractSchema
         $connection = $this->adapter;
 
         return $connection->query($query, $connection::QUERY_MODE_EXECUTE);
-    }
-
-    /**
-     * Cast string values to its database type.
-     *
-     * @param $data
-     * @param $type
-     * @param $length
-     *
-     * @return mixed
-     */
-    public function castValue($data, $type = null, $length = false)
-    {
-        $type = strtolower($type);
-
-        switch ($type) {
-            case 'blob':
-            case 'mediumblob':
-                // NOTE: Do we really need to encode the blob?
-                $data = base64_encode($data);
-                break;
-            case 'year':
-            case 'bigint':
-            case 'smallint':
-            case 'mediumint':
-            case 'int':
-            case 'integer':
-            case 'long':
-            case 'tinyint':
-                $data = ($data === null) ? null : (int)$data;
-                break;
-            case 'float':
-                $data = (float)$data;
-                break;
-            case 'date':
-            case 'datetime':
-                $format = 'Y-m-d';
-                $zeroData = '0000-00-00';
-                if ($type === 'datetime') {
-                    $format .= ' H:i:s';
-                    $zeroData .= ' 00:00:00';
-                }
-
-                if ($data === $zeroData) {
-                    $data = null;
-                }
-                $datetime = \DateTime::createFromFormat($format, $data);
-                $data = $datetime ? $datetime->format($format) : null;
-                break;
-            case 'time':
-                // NOTE: Assuming this are all valid formatted data
-                $data = !empty($data) ? $data : null;
-                break;
-            case 'char':
-            case 'varchar':
-            case 'text':
-            case 'tinytext':
-            case 'mediumtext':
-            case 'longtext':
-            case 'var_string':
-                break;
-        }
-
-        return $data;
-    }
-
-    public function parseType($data, $type = null, $length = false)
-    {
-        return $this->castValue($data, $type, $length);
     }
 
     /**

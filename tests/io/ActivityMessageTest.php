@@ -44,17 +44,23 @@ class ActivityMessageTest extends \PHPUnit_Framework_TestCase
             ]
         ], ['query' => ['access_token' => 'token']]);
 
-        $query = 'CREATE TABLE `objects` (
-            `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-            `name` varchar(100) NOT NULL,
-            PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+        request_post('collections', [
+            'collection' => 'objects',
+            'fields' => [
+                [
+                    'field' => 'id',
+                    'auto_increment' => true,
+                    'type' => 'integer',
+                    'interface' => 'primary_key'
+                ],
+                [
+                    'field' => 'name',
+                    'type' => 'varchar',
+                    'interface' => 'text_input'
+                ],
 
-        static::$db->execute($query);
-
-        table_insert(static::$db, 'directus_collections', [
-            'collection' => 'objects'
-        ]);
+            ]
+        ], ['query' => ['access_token' => 'token']]);
     }
 
     public static function tearDownAfterClass()

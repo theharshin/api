@@ -178,6 +178,7 @@ class SchemaFactory
         if ($column instanceof Integer) {
             $column->setOption('autoincrement', $autoincrement);
             $column->setOption('unsigned', $unsigned);
+            $column->setOption('length', null);
         }
 
         return $column;

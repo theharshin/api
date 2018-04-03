@@ -29,7 +29,9 @@ class InstallModule extends ModuleBase
                 . PHP_EOL . "\t\t-p " . 'Password for the DB connection user. Default: directus'
                 . PHP_EOL . "\t\t-t " . 'Database Server Type. Default: mysql'
                 . PHP_EOL . "\t\t-P " . 'Database Server Port. Default: 3306'
-                . PHP_EOL . "\t\t-r " . 'Directus root URI. Default: /',
+                . PHP_EOL . "\t\t-r " . 'Directus root URI. Default: /'
+                . PHP_EOL . "\t\t-e " . 'Directus email sender. Default: root@localhost'
+                . PHP_EOL . "\t\t-E " . 'Environment. Default: _',
             'database' => '',
             'install' => ''
                 . PHP_EOL . "\t\t-e " . 'Administrator e-mail address, used for administration login. Default: admin@directus.com'
@@ -88,6 +90,9 @@ class InstallModule extends ModuleBase
                 case 'e':
                     $data['directus_email'] = $value;
                     break;
+                case 'E':
+                    $data['env'] = $value;
+                    break;
             }
         }
 
@@ -102,15 +107,17 @@ class InstallModule extends ModuleBase
     public function cmdDatabase($args, $extra)
     {
         $directus_path = base_path() . DIRECTORY_SEPARATOR;
+        $env = null;
+
         foreach ($args as $key => $value) {
             switch ($key) {
-                case 'd':
-                    $directus_path = $value;
+                case 'E':
+                    $env = $value;
                     break;
             }
         }
 
-        InstallerUtils::createTables($directus_path);
+        InstallerUtils::createTables($directus_path, $env);
     }
 
     public function cmdInstall($args, $extra)
@@ -122,6 +129,7 @@ class InstallModule extends ModuleBase
         $data['directus_name'] = 'Directus';
 
         $directus_path = base_path() . DIRECTORY_SEPARATOR;
+        $env = null;
 
         foreach ($args as $key => $value) {
             switch ($key) {
@@ -140,15 +148,18 @@ class InstallModule extends ModuleBase
                 case 'd':
                     $directus_path = $value;
                     break;
+                case 'E':
+                    $env = $value;
+                    break;
             }
         }
 
         try {
-            $setting = new Setting($directus_path);
+            $setting = new Setting($directus_path, $env);
 
             if (!$setting->isConfigured()) {
-                InstallerUtils::addDefaultSettings($data, $directus_path);
-                InstallerUtils::addDefaultUser($data, $directus_path);
+                InstallerUtils::addDefaultSettings($data, $directus_path, $env);
+                InstallerUtils::addDefaultUser($data, $directus_path, $env);
             } else {
                 $setting->setSetting('global', 'project_name', $data['directus_name']);
                  // NOTE: Do we really want to change the email when re-run install command?

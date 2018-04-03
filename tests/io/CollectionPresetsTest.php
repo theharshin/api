@@ -20,7 +20,7 @@ class CollectionPresetsTest extends \PHPUnit_Framework_TestCase
 
     public static function resetDatabase()
     {
-        $db = create_db_connection();
+        $db = get_db_connection();
         truncate_table($db, 'directus_collection_presets');
     }
 
@@ -47,7 +47,7 @@ class CollectionPresetsTest extends \PHPUnit_Framework_TestCase
 
     public function testCreateMissingViewType()
     {
-        $data = ['collection' => 'products', 'fields' => 'id,name'];
+        $data = ['collection' => 'products', 'filters' => 'a-filter'];
         $response = request_error_post('collection_presets', $data, ['query' => ['access_token' => 'token']]);
         assert_response_error($this, $response, [
             'status' => 400,

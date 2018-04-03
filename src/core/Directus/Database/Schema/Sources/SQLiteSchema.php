@@ -3,11 +3,13 @@
 namespace Directus\Database\Schema\Sources;
 
 use Directus\Bootstrap;
+use Directus\Database\Connection;
+use Directus\Database\Schema\DataTypes;
 use Directus\Database\Schema\SchemaManager;
 use Directus\Util\ArrayUtils;
+use Zend\Db\Metadata\Object\TableObject;
 use Zend\Db\Metadata\Source\SqliteMetadata;
 use Zend\Db\Sql\Expression;
-use Zend\Db\Sql\Predicate\In;
 use Zend\Db\Sql\Predicate\NotIn;
 use Zend\Db\Sql\Select;
 use Zend\Db\Sql\Sql;
@@ -21,62 +23,17 @@ class SQLiteSchema extends AbstractSchema
     protected $metadata;
 
     /**
-     * @inheritDoc
+     * @var Connection
      */
-    public function __construct($adapter)
-    {
-        parent::__construct($adapter);
-
-        $this->metadata = new SqliteMetadata($adapter);
-    }
+    protected $adapter;
 
     /**
      * @inheritDoc
      */
-    public function getTables()
+    public function __construct($adapter)
     {
-        $tablesObject = $this->metadata->getTables();
-        $directusTablesInfo = $this->getDirectusTablesInfo();
-
-        return $this->formatTablesFromInfo($tablesObject, $directusTablesInfo);
-    }
-
-    protected function getDirectusTablesInfo()
-    {
-        $config = Bootstrap::get('config');
-
-        $blacklist = [];
-        if ($config->has('tableBlacklist')) {
-            $blacklist = $config->get('tableBlacklist');
-        }
-
-        $select = new Select();
-        $select->columns([
-            'table_name',
-            'hidden' => new Expression('IFNULL(hidden, 0)'),
-            'single' => new Expression('IFNULL(single, 0)'),
-            'user_create_column',
-            'user_update_column',
-            'date_create_column',
-            'date_update_column',
-            'footer',
-            'list_view',
-            'column_groupings',
-            'filter_column_blacklist',
-            'primary_column'
-        ]);
-        $select->from('directus_tables');
-
-        $skipTables = array_merge(SchemaManager::getDirectusTables(), (array)$blacklist);
-        $select->where([
-            new NotIn('table_name', $skipTables),
-        ]);
-
-        $sql = new Sql($this->adapter);
-        $statement = $sql->prepareStatementForSqlObject($select);
-        $result = $statement->execute();
-
-        return iterator_to_array($result);
+        $this->adapter = $adapter;
+        $this->metadata = new SqliteMetadata($this->adapter);
     }
 
     protected function formatTablesFromInfo($tablesObject, $directusTablesInfo)
@@ -91,93 +48,47 @@ class SQLiteSchema extends AbstractSchema
                 }
             }
 
-            $tables[] = $this->formatTableFromInfo($tableObject, $directusTableInfo);
+            $tables[] = $this->formatCollectionInfo($tableObject, $directusTableInfo);
         }
 
         return $tables;
     }
 
-    protected function formatTableFromInfo($tableObject, $directusTableInfo)
+    /**
+     * @param TableObject $tableObject
+     * @param array $directusTableInfo
+     *
+     * @return array
+     */
+    protected function formatCollectionInfo($tableObject, $directusTableInfo)
     {
         return [
-            'id' => $tableObject->getName(),
-            'table_name' => $tableObject->getName(),
-            'date_created' => null,
-            'comment' => '',
-            'count' => null,
+            'collection' => $tableObject->getName(),
+            'item_name_template' => ArrayUtils::get($directusTableInfo, 'item_name_template'),
+            'preview_url' => ArrayUtils::get($directusTableInfo, 'preview_url'),
             'hidden' => ArrayUtils::get($directusTableInfo, 'hidden', 0),
             'single' => ArrayUtils::get($directusTableInfo, 'single', 0),
-            'user_create_column' => ArrayUtils::get($directusTableInfo, 'user_create_column', null),
-            'user_update_column' => ArrayUtils::get($directusTableInfo, 'user_update_column', null),
-            'date_create_column' => ArrayUtils::get($directusTableInfo, 'date_create_column', null),
-            'date_update_column' => ArrayUtils::get($directusTableInfo, 'date_update_column', null),
-            'footer' => ArrayUtils::get($directusTableInfo, 'footer', 0),
-            'list_view' => ArrayUtils::get($directusTableInfo, 'list_view', null),
-            'column_groupings' => ArrayUtils::get($directusTableInfo, 'column_groupings', null),
-            'filter_column_blacklist' => ArrayUtils::get($directusTableInfo, 'filter_column_blacklist', null),
-            'primary_column' => ArrayUtils::get($directusTableInfo, 'primary_column', null)
+            'comment' => null,
+            'managed' => ArrayUtils::has($directusTableInfo, 'collection') ? true : false
         ];
     }
 
-    /**
-     * @inheritDoc
-     */
-    public function hasTable($tableName)
-    {
-        // TODO: Implement hasTable() method.
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function tableExists($tableName)
-    {
-        return $this->hasTable($tableName);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function someTableExists(array $tablesName)
-    {
-        return false;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getTable($tableName)
-    {
-        $tablesObject = $this->metadata->getTable($tableName);
-        $directusTablesInfo = $this->getDirectusTableInfo($tableName);
-        if (!$directusTablesInfo) {
-            $directusTablesInfo = [];
-        }
-
-        return $this->formatTableFromInfo($tablesObject, $directusTablesInfo);
-    }
-
-    public function getDirectusTableInfo($tableName)
+    public function getDirectusCollectionInfo($collectionName)
     {
         $select = new Select();
         $select->columns([
-            'table_name',
+            'collection',
+            'item_name_template',
+            'preview_url',
             'hidden' => new Expression('IFNULL(hidden, 0)'),
             'single' => new Expression('IFNULL(single, 0)'),
-            'user_create_column',
-            'user_update_column',
-            'date_create_column',
-            'date_update_column',
-            'footer',
-            'list_view',
-            'column_groupings',
-            'filter_column_blacklist',
-            'primary_column'
+            'comment'
+
         ]);
-        $select->from('directus_tables');
+        $select->from(SchemaManager::COLLECTION_COLLECTIONS);
 
         $select->where([
-            'table_name' => $tableName
+            'collection' => $collectionName
         ]);
 
         $sql = new Sql($this->adapter);
@@ -188,159 +99,97 @@ class SQLiteSchema extends AbstractSchema
     }
 
     /**
-     * @inheritDoc
+     * @param array $columnsInfo
+     * @param array $directusColumnsInfo
+     *
+     * @return array
      */
-    public function getColumns($tableName, $params = null)
-    {
-        $columnsInfo = $this->metadata->getColumns($tableName);
-        // OLD FILTER
-        // @TODO this should be a job for the SchemaManager
-        $columnName = isset($params['column_name']) ? $params['column_name'] : -1;
-        if ($columnName != -1) {
-            foreach ($columnsInfo as $index => $column) {
-                if ($column->getName() == $columnName) {
-                    unset($columnsInfo[$index]);
-                    break;
-                }
-            }
-        }
-
-        $directusColumns = $this->getDirectusColumnsInfo($tableName, $params);
-        $columns = $this->formatColumnsFromInfo($columnsInfo, $directusColumns);
-
-        return $columns;
-    }
-
-    public function getAllColumns()
-    {
-        $allColumns = [];
-        $allTables = $this->getTables();
-
-        foreach ($allTables as $table) {
-            $columns = $this->getColumns($table['table_name']);
-            foreach ($columns as $index => $column) {
-                $columns[$index]['table_name'] = $table['table_name'];
-            }
-
-            $allColumns = array_merge($allColumns, $columns);
-        }
-
-        return $allColumns;
-    }
-
-    protected function formatColumnsFromInfo($columnsInfo, $directusColumnsInfo)
+    protected function formatFieldsInfo($columnsInfo, array $directusColumnsInfo)
     {
         $columns = [];
 
         foreach ($columnsInfo as $columnInfo) {
             $directusColumnInfo = [];
             foreach ($directusColumnsInfo as $index => $column) {
-                if ($column['column_name'] == $columnInfo->getName()) {
+                if ($column['field'] == $columnInfo['name']) {
                     $directusColumnInfo = $column;
                     unset($directusColumnsInfo[$index]);
                 }
             }
 
-            $columns[] = $this->formatColumnFromInfo($columnInfo, $directusColumnInfo);
+            $columns[] = $this->formatFieldInfo($columnInfo, $directusColumnInfo);
         }
 
         return $columns;
     }
 
-    protected function formatColumnFromInfo($columnInfo, $directusColumnInfo)
+    /**
+     * @param array $columnInfo
+     * @param array $directusColumnInfo
+     *
+     * @return array
+     */
+    protected function formatFieldInfo(array $columnInfo, array $directusColumnInfo)
     {
-        $matches = [];
-        preg_match('#^([a-zA-Z]+)(\(.*\)){0,1}$#', $columnInfo->getDataType(), $matches);
-
-        $dataType = strtoupper($matches[1]);
-
         return [
-            'id' => $columnInfo->getName(),
-            'column_name' => $columnInfo->getName(),
-            'type' => $dataType,
-            'char_length' => $columnInfo->getCharacterMaximumLength(),
-            'is_nullable' => $columnInfo->getIsNullable() ? 'YES' : 'NO',
-            'default_value' => $columnInfo->getColumnDefault() == 'NULL' ? NULL : $columnInfo->getColumnDefault(),
-            'comment' => '',
-            'sort' => $columnInfo->getOrdinalPosition(),
-            'column_type' => $columnInfo->getDataType(),
-            'ui' => ArrayUtils::get($directusColumnInfo, 'ui', null),
-            'hidden_input' => ArrayUtils::get($directusColumnInfo, 'hidden_input', 0),
-            'relationship_type' => ArrayUtils::get($directusColumnInfo, 'relationship_type', null),
-            'related_table' => ArrayUtils::get($directusColumnInfo, 'related_table', null),
-            'junction_table' => ArrayUtils::get($directusColumnInfo, 'junction_table', null),
-            'junction_key_left' => ArrayUtils::get($directusColumnInfo, 'junction_key_left', null),
-            'junction_key_right' => ArrayUtils::get($directusColumnInfo, 'junction_key_right', null),
-            'required' => ArrayUtils::get($directusColumnInfo, 'required', 0),
+            'id' => ArrayUtils::get($directusColumnInfo, 'id'),
+            'collection' => ArrayUtils::get($columnInfo, 'table'),
+            'field' => ArrayUtils::get($columnInfo, 'name'),
+            'type' => ArrayUtils::get($columnInfo, 'type'),
+            'key' => ArrayUtils::get($columnInfo, 'key'),
+            'extra' => ArrayUtils::get($columnInfo, 'extra'),
+            'nullable' => ArrayUtils::get($columnInfo, 'nullable'),
+            'default_value' => ArrayUtils::get($columnInfo, 'column_default'),
+            'interface' => ArrayUtils::get($directusColumnInfo, 'interface'),
+            'options' => ArrayUtils::get($directusColumnInfo, 'options'),
+            'locked' => ArrayUtils::get($directusColumnInfo, 'locked'),
+            'translation' => ArrayUtils::get($directusColumnInfo, 'translation'),
+            'required' => ArrayUtils::get($directusColumnInfo, 'required', false),
+            'sort' => ArrayUtils::get($directusColumnInfo, 'sort', ArrayUtils::get($columnInfo, 'ordinal_position')),
+            'comment' => ArrayUtils::get($directusColumnInfo, 'comment'),
+            'hidden_input' => ArrayUtils::get($directusColumnInfo, 'hidden_input', false),
+            'hidden_list' => ArrayUtils::get($directusColumnInfo, 'hidden_list', false)
         ];
     }
 
     /**
      * Get all the columns information stored on Directus Columns table
      *
-     * @param $tableName
-     * @param $params
+     * @param string $collectionName
+     * @param array $params
      *
      * @return array
      */
-    protected function getDirectusColumnsInfo($tableName, $params = null)
+    protected function getDirectusFieldsInfo($collectionName, array $params = null)
     {
-        $acl = Bootstrap::get('acl');
-
-        $blacklist = $readFieldBlacklist = $acl->getTablePrivilegeList($tableName, $acl::FIELD_READ_BLACKLIST);
-        $columnName = isset($params['column_name']) ? $params['column_name'] : -1;
-
         $select = new Select();
         $select->columns([
-            'id' => 'column_name',
-            'column_name',
-            'type' => new Expression('upper(data_type)'),
-            'char_length' => new Expression('NULL'),
-            'is_nullable' => new Expression('"NO"'),
-            'default_value' => new Expression('NULL'),
-            'comment',
+            'id',
+            'collection',
+            'field',
+            'type',
+            'interface',
+            'options',
+            'locked',
+            'translation',
+            'required',
             'sort',
-            'column_type' => new Expression('NULL'),
-            'ui',
+            'comment',
             'hidden_input',
-            'relationship_type',
-            'related_table',
-            'junction_table',
-            'junction_key_left',
-            'junction_key_right',
-            'required' => new Expression('IFNULL(required, 0)')
+            'hidden_list'
         ]);
-        $select->from('directus_columns');
+        $select->from(SchemaManager::COLLECTION_FIELDS);
         $where = new Where();
-        $where
-            ->equalTo('TABLE_NAME', $tableName)
-            ->addPredicate(new In('data_type', ['alias', 'MANYTOMANY', 'ONETOMANY']));
-        // ->nest()
-        // ->addPredicate(new \Zend\Db\Sql\Predicate\Expression("'$columnName' = '-1'"))
-        // ->OR
-        // ->equalTo('column_name', $columnName)
-        // ->unnest()
-        // ->addPredicate(new IsNotNull('data_type'));
-
-        if ($columnName != -1) {
-            $where->equalTo('column_name', $columnName);
-        }
-
-        if (count($blacklist)) {
-            $where->addPredicate(new NotIn('COLUMN_NAME', $blacklist));
-        }
+        $where->equalTo('collection', $collectionName);
 
         $select->where($where);
         $select->order('sort');
 
         $sql = new Sql($this->adapter);
         $statement = $sql->prepareStatementForSqlObject($select);
-        // $query = $sql->getSqlStringForSqlObject($select, $this->adapter->getPlatform());
-        // echo $query;
         $result = $statement->execute();
-        $columns = iterator_to_array($result);
 
-        return $columns;
+        return iterator_to_array($result);
     }
 
     /**
@@ -387,24 +236,271 @@ class SQLiteSchema extends AbstractSchema
         return $columnName;
     }
 
+
+    // ----------------------------------------------------------------------------
+    //
+    // ----------------------------------------------------------------------------
     /**
      * @inheritDoc
      */
-    public function getFullSchema()
+    public function getConnection()
     {
-        // TODO: Implement getFullSchema() method.
+        return $this->adapter;
     }
 
     /**
      * @inheritDoc
      */
-    public function getColumnUI($column)
+    public function getSchemaName()
     {
-        // TODO: Implement getColumnUI() method.
+        // TODO: Implement getSchemaName() method.
     }
 
-    public function parseType($data, $type = null)
+    /**
+     * @inheritDoc
+     */
+    public function getCollections(array $params = [])
     {
-        return $data;
+        $tablesObject = $this->metadata->getTables();
+        $directusTablesInfo = $this->getDirectusTablesInfo();
+
+        return $this->formatTablesFromInfo($tablesObject, $directusTablesInfo);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function collectionExists($collectionName)
+    {
+        try {
+            $this->metadata->getTable($collectionName);
+        } catch (\Exception $e) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getCollection($collectionName)
+    {
+        try {
+            $collection = $this->metadata->getTable($collectionName);
+        } catch (\Exception $e) {
+            return [];
+        }
+
+        $directusTablesInfo = $this->getDirectusCollectionInfo($collectionName);
+        if (!$directusTablesInfo) {
+            $directusTablesInfo = [];
+        }
+
+        return $this->formatCollectionInfo($collection, $directusTablesInfo);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getFields($collectionName, $params = null)
+    {
+        $columnsInfo = $this->getFieldsData($collectionName, $this->adapter->getCurrentSchema());
+        $directusColumns = $this->getDirectusFieldsInfo($collectionName, $params);
+
+        return $this->formatFieldsInfo($columnsInfo, $directusColumns);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getAllFields()
+    {
+        // TODO: Implement getAllFields() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function hasField($collectionName, $fieldName)
+    {
+        // TODO: Implement hasField() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getField($collectionName, $fieldName)
+    {
+        // TODO: Implement getField() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getAllRelations()
+    {
+        // TODO: Implement getAllRelations() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getRelations($collectionName)
+    {
+        $select = new Select();
+        $select->columns([
+            'id',
+            'collection_a',
+            'field_a',
+            'junction_key_a',
+            'junction_collection',
+            'junction_mixed_collections',
+            'junction_key_b',
+            'collection_b',
+            'field_b'
+        ]);
+        $select->from(SchemaManager::COLLECTION_RELATIONS);
+
+        $where = $select->where->nest();
+        $where->equalTo('collection_a', $collectionName);
+        $where->OR;
+        $where->equalTo('collection_b', $collectionName);
+        $where->unnest();
+
+        $sql = new Sql($this->adapter);
+        $statement = $sql->prepareStatementForSqlObject($select);
+        $result = $statement->execute();
+
+        return iterator_to_array($result);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function castValue($data, $type = null, $length = null)
+    {
+        // TODO: Implement castValue() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getIntegerTypes()
+    {
+        // TODO: Implement getIntegerTypes() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isIntegerType($type)
+    {
+        // TODO: Implement isIntegerType() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getDecimalTypes()
+    {
+        // TODO: Implement getDecimalTypes() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isDecimalType($type)
+    {
+        // TODO: Implement isDecimalType() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getNumericTypes()
+    {
+        // TODO: Implement getNumericTypes() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isNumericType($type)
+    {
+        // TODO: Implement isNumericType() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getStringTypes()
+    {
+        // TODO: Implement getStringTypes() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isStringType($type)
+    {
+        // TODO: Implement isStringType() method.
+    }
+
+    protected function getFieldsData($collection, $schema = null)
+    {
+        $columns = [];
+        $rows = $this->fetchPragma('table_info', $collection, $schema);
+
+        foreach ($rows as $row) {
+            $matches = [];
+            preg_match('#^([a-zA-Z]+)(\(.*\)){0,1}$#', ArrayUtils::get($row, 'type', ''), $matches);
+            $dataType = $matches[1];
+
+            $extra = null;
+            if (DataTypes::isIntegerType($dataType) && $row['pk'] == 1) {
+                $extra = 'auto_increment';
+            }
+
+            $columns[] = [
+                'table'                     => $collection,
+                'name'                      => $row['name'],
+                // cid appears to be zero-based, ordinal position needs to be one-based
+                'ordinal_position'          => $row['cid'] + 1,
+                'column_default'            => $row['dflt_value'],
+                'nullable'                  => ! ((bool) $row['notnull']),
+                'type'                      => $dataType,
+                'key'                       => $row['pk'] == 1 ? 'PRI' : null,
+                'extra'                     => $extra,
+                'character_maximum_length'  => null,
+                'character_octet_length'    => null,
+                'numeric_precision'         => null,
+                'numeric_scale'             => null,
+                'numeric_unsigned'          => null,
+                'erratas'                   => [],
+            ];
+        }
+
+        return $columns;
+    }
+
+    protected function fetchPragma($name, $value = null, $schema = null)
+    {
+        $p = $this->adapter->getPlatform();
+
+        $sql = 'PRAGMA ';
+
+        if (null !== $schema) {
+            $sql .= $p->quoteIdentifier($schema) . '.';
+        }
+        $sql .= $name;
+
+        if (null !== $value) {
+            $sql .= '(' . $p->quoteTrustedValue($value) . ')';
+        }
+
+        $results = $this->adapter->execute($sql);
+
+        return $results->toArray();
     }
 }

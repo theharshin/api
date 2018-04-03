@@ -6,6 +6,7 @@ use Directus\Database\Exception\CollectionNotFoundException;
 use Directus\Database\Schema\Object\Field;
 use Directus\Database\Schema\Object\Collection;
 use Directus\Database\Schema\Sources\SchemaInterface;
+use Directus\Exception\Exception;
 use Directus\Util\ArrayUtils;
 
 class SchemaManager
@@ -100,7 +101,7 @@ class SchemaManager
     /**
      * Get the table schema information
      *
-     * @param string $tableName
+     * @param string $collectionName
      * @param array  $params
      * @param bool   $skipCache
      *
@@ -113,8 +114,7 @@ class SchemaManager
         $collection = ArrayUtils::get($this->data, 'collections.' . $collectionName, null);
         if (!$collection || $skipCache) {
             // Get the table schema data from the source
-            $collectionResult = $this->source->getCollection($collectionName);
-            $collectionData = $collectionResult->current();
+            $collectionData = $this->source->getCollection($collectionName);
 
             if (!$collectionData) {
                 throw new CollectionNotFoundException($collectionName);
@@ -254,24 +254,24 @@ class SchemaManager
     /**
      * Get all columns in the given table name
      *
-     * @param $tableName
+     * @param $collectionName
      * @param array $params
      *
      * @return \Directus\Database\Schema\Object\Field[]
      */
-    public function getFields($tableName, $params = [])
+    public function getFields($collectionName, $params = [])
     {
         // TODO: filter black listed fields on services level
 
-        $columnsSchema = ArrayUtils::get($this->data, 'columns.' . $tableName, null);
+        $columnsSchema = ArrayUtils::get($this->data, 'fields.' . $collectionName, null);
         if (!$columnsSchema) {
-            $columnsResult = $this->source->getFields($tableName, $params);
-            $relationsResult = $this->source->getRelations($tableName);
+            $fieldsData = $this->source->getFields($collectionName, $params);
+            $relationsData = $this->source->getRelations($collectionName);
 
             // TODO: Improve this logic
             $relationsA = [];
             $relationsB = [];
-            foreach ($relationsResult as $relation) {
+            foreach ($relationsData as $relation) {
                 $relationsA[$relation['field_a']] = $relation;
 
                 if (isset($relation['field_b'])) {
@@ -280,8 +280,8 @@ class SchemaManager
             }
 
             $columnsSchema = [];
-            foreach ($columnsResult as $column) {
-                $field = $this->createFieldFromArray($column);
+            foreach ($fieldsData as $field) {
+                $field = $this->createFieldFromArray($field);
 
                 if (array_key_exists($field->getName(), $relationsA)) {
                     $field->setRelationship($relationsA[$field->getName()]);
@@ -292,7 +292,7 @@ class SchemaManager
                 $columnsSchema[] = $field;
             }
 
-            $this->data['columns'][$tableName] = $columnsSchema;
+            $this->data['columns'][$collectionName] = $columnsSchema;
         }
 
         return $columnsSchema;
@@ -364,25 +364,101 @@ class SchemaManager
         return $tableObject->getDateCreateField() || $tableObject->getDateUpdateField();
     }
 
-    public function castRecordValues($records, $columns)
+    /**
+     * Cast records values by its column data type
+     *
+     * @param array    $records
+     * @param Field[] $fields
+     *
+     * @return array
+     */
+    public function castRecordValues(array $records, $fields)
     {
-        return $this->source->castRecordValues($records, $columns);
+        // hotfix: records sometimes are no set as an array of rows.
+        $singleRecord = false;
+        if (!ArrayUtils::isNumericKeys($records)) {
+            $records = [$records];
+            $singleRecord = true;
+        }
+
+        foreach ($fields as $field) {
+            foreach ($records as $index => $record) {
+                $fieldName = $field->getName();
+                if (ArrayUtils::has($record, $fieldName)) {
+                    $records[$index][$fieldName] = $this->castValue($record[$fieldName], $field->getType());
+                }
+            }
+        }
+
+        return $singleRecord ? reset($records) : $records;
     }
 
     /**
-     * Cast value against a database type
+     * Cast string values to its database type.
      *
-     * NOTE: it only works with MySQL data types
-     *
-     * @param $value
+     * @param $data
      * @param $type
      * @param $length
      *
      * @return mixed
      */
-    public function castValue($value, $type = null, $length = false)
+    public function castValue($data, $type = null, $length = false)
     {
-        return $this->source->castValue($value, $type, $length);
+        $type = strtolower($type);
+
+        switch ($type) {
+            case 'bool':
+            case 'boolean':
+                $data = boolval($data);
+                break;
+            case 'blob':
+            case 'mediumblob':
+                // NOTE: Do we really need to encode the blob?
+                $data = base64_encode($data);
+                break;
+            case 'year':
+            case 'bigint':
+            case 'smallint':
+            case 'mediumint':
+            case 'int':
+            case 'integer':
+            case 'long':
+            case 'tinyint':
+                $data = ($data === null) ? null : (int)$data;
+                break;
+            case 'float':
+                $data = (float)$data;
+                break;
+            case 'date':
+            case 'datetime':
+                $format = 'Y-m-d';
+                $zeroData = '0000-00-00';
+                if ($type === 'datetime') {
+                    $format .= ' H:i:s';
+                    $zeroData .= ' 00:00:00';
+                }
+
+                if ($data === $zeroData) {
+                    $data = null;
+                }
+                $datetime = \DateTime::createFromFormat($format, $data);
+                $data = $datetime ? $datetime->format($format) : null;
+                break;
+            case 'time':
+                // NOTE: Assuming this are all valid formatted data
+                $data = !empty($data) ? $data : null;
+                break;
+            case 'char':
+            case 'varchar':
+            case 'text':
+            case 'tinytext':
+            case 'mediumtext':
+            case 'longtext':
+            case 'var_string':
+                break;
+        }
+
+        return $data;
     }
 
     /**

@@ -26,7 +26,6 @@ class CollectionTest extends \PHPUnit_Framework_TestCase
         $this->assertSame(ArrayUtils::get($data, 'preview_url'), $collection->getPreviewUrl());
         $this->assertFalse($collection->isHidden());
         $this->assertFalse($collection->isSingle());
-        // $this->assertInstanceOf(StatusMapping::class, $collection->getStatusMapping());
         $this->assertSame(ArrayUtils::get($data, 'comment'), $collection->getComment());
         $this->assertSame(ArrayUtils::get($data, 'schema'), $collection->getSchema());
 

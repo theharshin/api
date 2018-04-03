@@ -21,7 +21,16 @@ class InstallerUtils
      */
     public static function createConfig($data, $path)
     {
-        $requiredAttributes = ['db_host', 'db_name', 'db_user', 'db_password'];
+        switch (ArrayUtils::get($data, 'db_type')) {
+            case 'sqlite':
+                $requiredAttributes = ['db_name'];
+                break;
+            case 'mysql':
+            default:
+                $requiredAttributes = ['db_host', 'db_name', 'db_user'];
+                break;
+        }
+
         if (!ArrayUtils::contains($data, $requiredAttributes)) {
             throw new \InvalidArgumentException(
                 'Creating config files required: ' . implode(', ', $requiredAttributes)
@@ -59,7 +68,8 @@ class InstallerUtils
 
         $configStub = static::createConfigFileContent($data);
 
-        $configPath = rtrim($path, '/') . '/api.php';
+        $configName = static::getConfigName(ArrayUtils::get($data, 'env', '_'));
+        $configPath = rtrim($path, '/') . '/' . $configName . '.php';
         file_put_contents($configPath, $configStub);
     }
 
@@ -82,10 +92,13 @@ class InstallerUtils
 
     /**
      * Create Directus Tables from Migrations
+     *
      * @param string $directusPath
+     * @param string $env
+     *
      * @throws \Exception
      */
-    public static function createTables($directusPath)
+    public static function createTables($directusPath, $env = null)
     {
         $directusPath = rtrim($directusPath, '/');
         /**
@@ -96,8 +109,9 @@ class InstallerUtils
         static::checkConfigurationFile($directusPath);
 
         $configPath = $directusPath . '/config';
+        $configName = static::getConfigName($env);
 
-        $apiConfig = require $configPath . '/api.php';
+        $apiConfig = require $configPath . '/' . $configName . '.php';
         $configArray = require $configPath . '/migrations.php';
         $configArray['paths']['migrations'] = $directusPath . '/migrations/db/schemas';
         $configArray['paths']['seeds'] = $directusPath . '/migrations/db/seeds';
@@ -122,10 +136,11 @@ class InstallerUtils
      *
      * @param array $data
      * @param string $directusPath
+     * @param string $env
      *
      * @throws \Exception
      */
-    public static function addDefaultSettings($data, $directusPath)
+    public static function addDefaultSettings($data, $directusPath, $env = null)
     {
         $directusPath = rtrim($directusPath, '/');
         /**
@@ -134,10 +149,8 @@ class InstallerUtils
          */
         static::checkConfigurationFile($directusPath);
 
-        // require_once $directusPath . '/api/config.php';
-
-        $app = new Application($directusPath, require $directusPath . '/config/api.php');
-        // $db = Bootstrap::get('ZendDb');
+        $configName = static::getConfigName($env);
+        $app = new Application($directusPath, require $directusPath . '/config/' . $configName . '.php');
         $db = $app->getContainer()->get('database');
 
         $defaultSettings = static::getDefaultSettings($data);
@@ -152,12 +165,14 @@ class InstallerUtils
      * Add Directus default user
      *
      * @param array $data
+     * @param string $env
+     *
      * @return array
      */
-    public static function addDefaultUser($data, $directusPath)
+    public static function addDefaultUser($data, $directusPath, $env = null)
     {
-        $app = new Application($directusPath, require $directusPath . '/config/api.php');
-        // $db = Bootstrap::get('ZendDb');
+        $configName = static::getConfigName($env);
+        $app = new Application($directusPath, require $directusPath . '/config/' . $configName . '.php');
         $db = $app->getContainer()->get('database');
         $tableGateway = new TableGateway('directus_users', $db);
 
@@ -262,6 +277,23 @@ class InstallerUtils
         $dbConnection = Bootstrap::get('ZendDb');
 
         $dbConnection->execute($sql);
+    }
+
+    /**
+     * Returns the config name based on its environment
+     *
+     * @param $env
+     *
+     * @return string
+     */
+    public static function getConfigName($env)
+    {
+        $name = 'api';
+        if ($env && $env !== '_') {
+            $name = sprintf('api.%s', $env);
+        }
+
+        return $name;
     }
 
     /**

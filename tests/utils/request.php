@@ -10,7 +10,7 @@
 function request($method, $path, array $options = [])
 {
     $http = new GuzzleHttp\Client([
-        'base_uri' => 'http://localhost/api/'
+        'base_uri' => get_tests_base_uri()
     ]);
 
     // if json is set to true, it means we want the body to be a JSON
@@ -19,7 +19,7 @@ function request($method, $path, array $options = [])
         unset($options['form_params']);
     }
 
-    $env = isset($options['env']) ? $options['env'] : '_';
+    $env = isset($options['env']) ? $options['env'] : get_tests_env();
     if ($env !== false) {
         $path = sprintf('%s/%s', $env, $path);
     }

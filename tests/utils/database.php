@@ -12,19 +12,35 @@ use Directus\Database\Connection;
  */
 function create_db_connection()
 {
-    $charset = 'utf8mb4';
+    $charset = get_tests_db('charset');
 
     return new \Directus\Database\Connection([
-        'driver' => 'Pdo_mysql',
-        'host' => 'localhost',
-        'port' => 3306,
-        'database' => 'directus_test',
-        'username' => 'root',
-        'password' => null,
+        'driver' => 'Pdo_' . get_tests_db('type'),
+        'host' => get_tests_db('host'),
+        'port' => get_tests_db('port'),
+        'database' => get_tests_db('name'),
+        'username' => get_tests_db('username'),
+        'password' => get_tests_db('password'),
         'charset' => $charset,
         \PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
         \PDO::MYSQL_ATTR_INIT_COMMAND => sprintf('SET NAMES "%s"', $charset)
     ]);
+}
+
+/**
+ * Returns a static database connection
+ *
+ * @return Connection|null
+ */
+function get_db_connection()
+{
+    static $connection = null;
+
+    if ($connection === null) {
+        $connection = create_db_connection();
+    }
+
+    return $connection;
 }
 
 /**
@@ -49,8 +65,15 @@ function fill_table(Connection $db, $table, array $items)
  */
 function truncate_table(Connection $db, $table)
 {
-    $query = 'TRUNCATE `%s`;';
-    $db->execute(sprintf($query, $table));
+    switch (get_platform_name($db)) {
+        case 'sqlite':
+            $db->execute(sprintf('DELETE FROM "%s"', $table));
+            $db->execute(sprintf('DELETE FROM sqlite_sequence WHERE name = "%s"', $table));
+            break;
+        case 'mysql':
+        default:
+            $db->execute(sprintf('TRUNCATE `%s`;', $table));
+    }
 }
 
 /**
@@ -61,11 +84,23 @@ function truncate_table(Connection $db, $table)
  */
 function table_exists(Connection $db, $table)
 {
-    $query = 'SHOW TABLES LIKE "%s";';
+    switch (get_platform_name($db)) {
+        case 'sqlite':
+            try {
+                $db->execute('SELECT * FROM ' . $table);
+                $exists = true;
+            } catch (\Exception $e) {
+                $exists = false;
+            }
+            break;
+        case 'mysql':
+        default:
+            $query = 'SHOW TABLES LIKE "%s";';
+            $result = $db->execute(sprintf($query, $table));
+            $exists = $result->count() === 1;
+    }
 
-    $result = $db->execute(sprintf($query, $table));
-
-    return $result->count() === 1;
+    return $exists;
 }
 
 /**
@@ -117,23 +152,9 @@ function delete_item(Connection $db, $table, array $conditions)
 
 function table_insert(Connection $db, $table, array $data)
 {
-    $query = 'INSERT INTO `%s` (%s) VALUES (%s)';
+    $gateway = new \Zend\Db\TableGateway\TableGateway($table, $db);
 
-    $columns = array_map(function ($column) {
-        return sprintf('`%s`', $column);
-    }, array_keys($data));
-
-    $values = array_map(function ($value) {
-        if (is_string($value)) {
-            $value = sprintf('"%s"', $value);
-        } else if (is_null($value)) {
-            $value = 'NULL';
-        }
-
-        return $value;
-    }, $data);
-
-    $db->execute(sprintf($query, $table, implode(', ', $columns), implode(', ', $values)));
+    $gateway->insert($data);
 }
 
 /**
@@ -143,6 +164,11 @@ function table_insert(Connection $db, $table, array $data)
 function drop_table(Connection $db, $table)
 {
     $query = 'DROP TABLE IF EXISTS `%s`;';
+
+    if (get_platform_name($db) === 'sqlite') {
+        $query .= ' VACUUM';
+    }
+
     $db->execute(sprintf($query, $table));
 
     delete_item($db, 'directus_collections', [
@@ -157,9 +183,23 @@ function drop_table(Connection $db, $table)
  */
 function reset_autoincrement(Connection $db, $table, $value = 1)
 {
-    $query = 'ALTER TABLE `%s` AUTO_INCREMENT = %d;';
+    switch (get_platform_name($db)) {
+        case 'sqlite':
+            $query = sprintf(
+                'UPDATE "sqlite_sequence" SET "seq" = %s WHERE name = "%s";',
+                $value, $table
+            );
+            break;
+        case 'mysql':
+        default:
+            $query = sprintf(
+                'ALTER TABLE `%s` AUTO_INCREMENT = %d;',
+                $table, $value
+            );
+            break;
+    }
 
-    $db->execute(sprintf($query, $table, $value));
+    $db->execute($query);
 }
 
 /**
@@ -173,12 +213,23 @@ function reset_autoincrement(Connection $db, $table, $value = 1)
  */
 function reset_table_id(Connection $db, $table, $nextId)
 {
-    $deleteQueryFormat = 'DELETE FROM `%s` WHERE `id` >= %d;';
-    $db->execute(sprintf(
-        $deleteQueryFormat,
-        $table,
-        $nextId
-    ));
+    $gateway = new \Zend\Db\TableGateway\TableGateway($table, $db);
+
+    $gateway->delete(function (\Zend\Db\Sql\Delete $delete) use ($nextId) {
+        $delete->where->greaterThanOrEqualTo('id', $nextId);
+    });
 
     reset_autoincrement($db, $table, $nextId);
+}
+
+/**
+ * Gets the database platform name
+ *
+ * @param Connection $db
+ *
+ * @return string
+ */
+function get_platform_name(Connection $db)
+{
+    return strtolower($db->getPlatform()->getName());
 }

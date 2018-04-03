@@ -3,6 +3,9 @@ config/*
 !config/migrations.php
 !config/api_sample.php
 
+# Tests
+tests/config.php
+
 public/core/
 
 documents

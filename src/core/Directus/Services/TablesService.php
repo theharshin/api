@@ -706,17 +706,22 @@ class TablesService extends AbstractService
         $this->validateSystemFields($columns);
 
         $toAdd = $toChange = $aliasColumn = [];
-        $tableObject = $this->getSchemaManager()->getCollection($name);
+        $collection = $this->getSchemaManager()->getCollection($name);
         foreach ($columns as $i => $column) {
-            $columnObject = $tableObject->getField($column['field']);
+            $field = $collection->getField($column['field']);
             $type = ArrayUtils::get($column, 'type');
-            if ($columnObject) {
-                $toChange[] = array_merge($columnObject->toArray(), $column);
+
+            if ($field) {
+                $toChange[] = array_merge($field->toArray(), $column);
             } else if (strtoupper($type) !== 'ALIAS') {
                 $toAdd[] = $column;
             } else {
                 $aliasColumn[] = $column;
             }
+        }
+
+        if (empty($toAdd) && empty($toChange)) {
+            return true;
         }
 
         $table = $schemaFactory->alterTable($name, [

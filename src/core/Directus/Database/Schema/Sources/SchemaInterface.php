@@ -49,9 +49,9 @@ interface SchemaInterface
     /**
      * Gets the structure of the given table name.
      *
-     * @param $collectionName
+     * @param string $collectionName
      *
-     * @return ResultSet
+     * @return array
      */
     public function getCollection($collectionName);
 
@@ -161,27 +161,6 @@ interface SchemaInterface
      * @return bool
      */
     // public function dropPrimaryKey($table, $column);
-
-    /**
-     * Cast record values by the schema type
-     *
-     * @param array $records
-     * @param array $columns
-     *
-     * @return array
-     */
-    public function castRecordValues(array $records, $columns);
-
-    /**
-     * Cast value to its database type.
-     *
-     * @param mixed $data
-     * @param null  $type
-     * @param null|int $length
-     *
-     * @return mixed
-     */
-    public function castValue($data, $type = null, $length = null);
 
     /**
      * Gets the default interface name per type
